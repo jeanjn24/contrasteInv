@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Contraste Restobar: Cargar Excel y JSON</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.4.0/jspdf.umd.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <style>
@@ -29,11 +30,7 @@
             max-width: 1000px;
             margin: 20px 0;
         }
-        .table-container {
-            width: 100%;
-            overflow-x: auto;
-        }
-        .btn-custom {
+        .btn-custom, .btn-pdf {
             background-color: #A6874A;
             color: #FCFCFC;
             border: none;
@@ -45,40 +42,66 @@
             width: 100%;
             max-width: 200px;
         }
-        .btn-custom:hover {
+        .btn-custom:hover, .btn-pdf:hover {
             background-color: #423C2F;
         }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            table-layout: fixed;
+        .btn-pdf:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
         }
-        th, td {
-            border: 2px solid #A6874A;
-            padding: 10px;
-            text-align: center;
-            vertical-align: middle;
-            word-wrap: break-word;
+        .table-responsive {
+            width: 100%;
+            margin-bottom: 20px;
+            -webkit-overflow-scrolling: touch;
+            overflow-x: auto;
+        }
+        .table {
+            width: 100%;
+            margin-bottom: 1rem;
+            color: #070707;
+            border-collapse: collapse;
         }
         th {
             background-color: #A6874A;
             color: #FCFCFC;
-            font-weight: bold;
+            text-align: center;
+            vertical-align: middle;
+            border: 1px solid #A6874A;
         }
-        th i {
-            margin-left: 10px;
-            cursor: pointer;
+        td {
+            text-align: center;
+            vertical-align: middle;
+            border: 1px solid #A6874A;
+        }
+        .footer-table {
+            width: 100%;
+            margin-top: 20px;
         }
         @media (max-width: 600px) {
-            th, td {
-                padding: 5px;
+            .table-responsive {
+                overflow-x: visible;
             }
-            .btn-custom {
-                font-size: 14px;
-                padding: 8px 16px;
+            .table thead {
+                display: none;
             }
-            h1 {
-                font-size: 24px;
+            .table, .table tbody, .table tr, .table td {
+                display: block;
+                width: 100%;
+            }
+            .table td {
+                text-align: right;
+                padding-left: 50%;
+                position: relative;
+            }
+            .table td::before {
+                content: attr(data-label);
+                position: absolute;
+                left: 0;
+                width: 50%;
+                padding-right: 10px;
+                white-space: nowrap;
+                text-align: left;
+                font-weight: bold;
             }
         }
     </style>
@@ -88,7 +111,9 @@
     <div class="container">
         <input type="file" id="excelFileInput" class="form-control mb-3" accept=".xlsx"/>
         <button onclick="handleFiles()" class="btn btn-custom">Cargar y Convertir</button>
-        <div class="table-container">
+        <button onclick="downloadPDF()" class="btn btn-pdf" id="downloadPDFBtn" disabled>Descargar Compras Pendientes</button>
+        <input type="text" id="searchInput" class="form-control mb-3" placeholder="Buscar por nombre de producto" onkeyup="filterTable()"/>
+        <div class="table-responsive">
             <table class="table table-striped table-bordered">
                 <thead>
                     <tr>
@@ -96,15 +121,36 @@
                         <th>Categoria <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(1, 'string')"></i></th>
                         <th>Stock <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(2, 'number')"></i></th>
                         <th>Stock Minimo <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(3, 'number')"></i></th>
-                        <th>Unid Medida <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(4, 'string')"></i></th>
-                        <th>Costo <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(5, 'number')"></i></th>
-                        <th>Frecuencia Compra <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(6, 'string')"></i></th>
-                        <th>Tipo de Proveedor <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(7, 'string')"></i></th>
-                        <th>Datos Proveedor <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(8, 'string')"></i></th>
+                        <th>Diferencia Stock <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(4, 'number')"></i></th>
+                        <th>Unid Medida <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(5, 'string')"></i></th>
+                        <th>Costo Unitario <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(6, 'number')"></i></th>
+                        <th>Costo Total <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(7, 'number')"></i></th>
+                        <th>Frecuencia Compra <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(8, 'string')"></i></th>
+                        <th>Tipo de Proveedor <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(9, 'string')"></i></th>
+                        <th>Datos Proveedor <i class="bi bi-funnel-fill filter-icon" onclick="sortTable(10, 'string')"></i></th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
                     <!-- Aquí se insertarán los resultados -->
+                </tbody>
+            </table>
+        </div>
+        <div class="footer-table">
+            <select id="categorySelect" class="form-control mb-3" onchange="calculateTotals()">
+                <option value="">Seleccionar Categoria</option>
+            </select>
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Total por Categoria</th>
+                        <th>Total Compras Pendientes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td id="totalCategoria">$0.00</td>
+                        <td id="totalPendientes">$0.00</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -113,6 +159,7 @@
     <script>
         let currentSortColumn = null;
         let currentSortOrder = 'asc';
+        let tableData = [];
 
         function handleFiles() {
             const excelInput = document.getElementById('excelFileInput');
@@ -161,10 +208,16 @@
                         reglas = reglas.filter(item => item.Item.trim() !== '');
 
                         // Combinar los datos
-                        const combined = mergeJSON(result, reglas);
+                        tableData = mergeJSON(result, reglas);
 
                         // Mostrar los datos en la tabla
-                        displayDataInTable(combined);
+                        displayDataInTable(tableData);
+
+                        // Poblar el select de categorías
+                        populateCategorySelect(tableData);
+
+                        // Habilitar el botón de descargar PDF
+                        document.getElementById('downloadPDFBtn').disabled = false;
                     })
                     .catch(error => {
                         console.error('Error al obtener el archivo JSON:', error);
@@ -194,23 +247,61 @@
             tableBody.innerHTML = '';
 
             data.forEach(row => {
+                const stock = parseFloat(row.Cantidad) || 0;
+                const stockMinimo = parseFloat(row["Cantidad Minima"]) || 0;
+                const diferenciaStock = Math.max(0, stockMinimo - stock);
+                const costoUnitario = parseFloat(row["Costo Unitario"]) || 0;
+                const costoTotal = diferenciaStock * costoUnitario;
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${row.Item || ''}</td>
-                    <td>${row.Sección || ''}</td>
-                    <td>${row.Cantidad !== undefined ? row.Cantidad : '0.0'}</td>
-                    <td>${row["Cantidad Minima"] || ''}</td>
-                    <td>${row.Unidad || ''}</td>
-                    <td>${row["Costo Unitario"] || ''}</td>
-                    <td>${row["Frecuencia Compra"] || ''}</td>
-                    <td>${row["Tipo de Proveedor"] || ''}</td>
-                    <td>${formatProveedorData(row["Datos Proveedor"])}</td>
+                    <td data-label="Producto">${row.Item || ''}</td>
+                    <td data-label="Categoria">${row.Sección || ''}</td>
+                    <td data-label="Stock">${stock.toFixed(2)}</td>
+                    <td data-label="Stock Minimo">${stockMinimo.toFixed(2)}</td>
+                    <td data-label="Diferencia Stock">${diferenciaStock.toFixed(2)}</td>
+                    <td data-label="Unid Medida">${row.Unidad || ''}</td>
+                    <td data-label="Costo Unitario">${costoUnitario.toFixed(2)}</td>
+                    <td data-label="Costo Total">${costoTotal.toFixed(2)}</td>
+                    <td data-label="Frecuencia Compra">${row["Frecuencia Compra"] || ''}</td>
+                    <td data-label="Tipo de Proveedor">${row["Tipo de Proveedor"] || ''}</td>
+                    <td data-label="Datos Proveedor">${formatProveedorData(row["Datos Proveedor"])}</td>
                 `;
                 tableBody.appendChild(tr);
             });
+        }
 
-            // Guardar los datos en el dataset de la tabla para facilitar el ordenamiento
-            tableBody.dataset.originalData = JSON.stringify(data);
+        function populateCategorySelect(data) {
+            const categorySelect = document.getElementById('categorySelect');
+            const categories = [...new Set(data.map(row => row.Sección))];
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categorySelect.appendChild(option);
+            });
+        }
+
+        function calculateTotals() {
+            const selectedCategory = document.getElementById('categorySelect').value;
+            let totalCategoria = 0;
+            let totalPendientes = 0;
+
+            tableData.forEach(row => {
+                const stock = parseFloat(row.Cantidad) || 0;
+                const stockMinimo = parseFloat(row["Cantidad Minima"]) || 0;
+                const diferenciaStock = Math.max(0, stockMinimo - stock);
+                const costoUnitario = parseFloat(row["Costo Unitario"]) || 0;
+                const costoTotal = diferenciaStock * costoUnitario;
+
+                if (row.Sección === selectedCategory) {
+                    totalCategoria += costoTotal;
+                }
+                totalPendientes += costoTotal;
+            });
+
+            document.getElementById('totalCategoria').textContent = `$${totalCategoria.toFixed(2)}`;
+            document.getElementById('totalPendientes').textContent = `$${totalPendientes.toFixed(2)}`;
         }
 
         function formatProveedorData(data) {
@@ -248,6 +339,47 @@
             // Limpiar y volver a agregar las filas ordenadas
             tableBody.innerHTML = '';
             sortedRows.forEach(row => tableBody.appendChild(row));
+        }
+
+        function filterTable() {
+            const searchInput = document.getElementById('searchInput').value.toLowerCase();
+            const filteredData = tableData.filter(row => row.Item.toLowerCase().includes(searchInput));
+            displayDataInTable(filteredData);
+        }
+
+        function downloadPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            const headers = ["Producto", "Categoria", "Cantidad a Comprar", "Costo por Unidad", "Costo Total", "Proveedor", "Tipo de Proveedor", "Check"];
+            const rows = tableData.map(row => {
+                const stock = parseFloat(row.Cantidad) || 0;
+                const stockMinimo = parseFloat(row["Cantidad Minima"]) || 0;
+                const diferenciaStock = Math.max(0, stockMinimo - stock);
+                const costoUnitario = parseFloat(row["Costo Unitario"]) || 0;
+                const costoTotal = diferenciaStock * costoUnitario;
+
+                return [
+                    row.Item || '',
+                    row.Sección || '',
+                    `${diferenciaStock.toFixed(2)} ${row.Unidad || ''}`,
+                    costoUnitario.toFixed(2),
+                    costoTotal.toFixed(2),
+                    row["Datos Proveedor"] || '',
+                    row["Tipo de Proveedor"] || '',
+                    ''
+                ];
+            });
+
+            doc.text("Compras Pendientes", 14, 16);
+            doc.autoTable({
+                startY: 20,
+                head: [headers],
+                body: rows,
+                theme: 'grid'
+            });
+
+            doc.save("compras_pendientes.pdf");
         }
     </script>
 </body>
